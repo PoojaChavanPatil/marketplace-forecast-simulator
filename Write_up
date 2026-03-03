@@ -1,0 +1,74 @@
+# Marketplace Demand Forecasting + Supply Simulator
+
+## Overview
+This project builds an end-to-end marketplace decision workflow:
+1) Forecast hourly demand  
+2) Simulate supply/capacity policies using a queue-based marketplace model  
+3) Optimize decisions under capacity cost + cancellation penalty assumptions
+
+The simulator evaluates how capacity choices impact:
+- cancellation rate
+- congestion (queue delay proxy)
+- simulated revenue
+- adjusted profit and break-even thresholds
+
+## Data
+**Source:** NYC TLC Yellow Taxi trip records (Jan–Mar 2024, Parquet)  
+**Demand definition:** hourly pickup counts (used as a proxy for “orders/hour”).
+
+Output dataset: `timestamp, demand` aggregated to an hourly time series:
+- Range: 2024-01-01 00:00 to 2024-03-31 23:00  
+- Total hours: 2184
+
+> Note: Raw Parquet files are not committed to GitHub.
+
+## Forecasting
+- **Train/Test:** time-based split (last 14 days as test window)
+- **Baseline:** Seasonal Naive (period=24 hours)
+- **Model:** Random Forest with features:
+  - hour of day, day of week
+  - lag_1, lag_24, lag_168
+
+### Forecast Results (Test Window)
+- Baseline WAPE: **0.336**
+- Random Forest WAPE: **0.063**
+
+## Marketplace Simulator
+Discrete-time (hourly) queue approximation:
+- arrivals = forecast demand
+- service = `capacity_per_hour` (orders/hour)
+- backlog carries over hour-to-hour
+
+Cancellations:
+- overflow beyond `max_queue`
+- abandonment when queue exceeds a congestion threshold
+
+Congestion metric:
+- **Queue delay proxy (minutes)** = `60 * queue / capacity`  
+  *(proxy for backlog work remaining; not a literal ETA)*
+
+## Policy Evaluation
+Policies tested (capacity per hour):
+- -10%: 4500  
+- Base: 5000  
+- +10%: 5500  
+- +20%: 6000  
+
+### Operational Outcomes
+- Cancel rate improves from ~9.7% (5000) to ~2.5% (6000)
+- Queue delay proxy improves from ~70 min to ~30 min
+
+## Adjusted Profit + Decision Boundary
+Adjusted objective:
+`profit_adj = simulated_revenue − capacity_cost − cancel_penalty × canceled_orders`
+
+With capacity cost fixed at **$1.50/unit/hour**, sensitivity analysis shows:
+- Optimal policy shifts from **+10%** to **+20%** when cancellation penalty exceeds **~$7.45 per cancel**.
+
+## Tech Stack
+Python, Pandas, NumPy, Scikit-learn, Matplotlib, PyArrow
+
+## How to Run
+1) Create a Python environment and install dependencies:
+```bash
+pip install -r requirements.txt
